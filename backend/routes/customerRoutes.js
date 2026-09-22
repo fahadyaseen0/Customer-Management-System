@@ -1,0 +1,15 @@
+const router = require("express").Router();
+const { authenticate, adminOnly } = require("../middleware/auth");
+const upload = require("../middleware/upload");
+const wrap = require("../utils/asyncHandler");
+const c = require("../controllers/customerController");
+router.use(authenticate);
+router.get("/stats", adminOnly, wrap(c.stats));
+router.get("/", wrap(c.list));
+router.post("/", wrap(c.create));
+router.get("/history", wrap(c.history));
+router.get("/:id", wrap(c.get));
+router.post("/:id/documents", upload.single("image"), wrap(c.upload));
+router.put("/:id/documents/:docId", upload.single("image"), wrap(c.upload));
+router.post("/:id/documents/:docId/send", wrap(c.send));
+module.exports = router;
