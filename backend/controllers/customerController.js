@@ -42,12 +42,23 @@ exports.history = async (req, res) => {
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 30));
   const pipeline = [
-    { $project: { name: 1, city: 1, events: { $concatArrays: [
-      [{ eventId: "$_id", at: "$createdAt", kind: "customer_created" }],
-      { $map: { input: { $ifNull: ["$documents", []] }, as: "doc", in: {
-        eventId: "$$doc._id", at: { $ifNull: ["$$doc.uploadedAt", "$createdAt"] }, kind: "document_uploaded"
-      } } }
-    ] } } },
+  { 
+    $project: { 
+      name: 1, 
+      city: 1, 
+      events: { 
+        $map: { 
+          input: { $ifNull: ["$documents", []] }, 
+          as: "doc", 
+          in: {
+            eventId: "$$doc._id",
+            at: { $ifNull: ["$$doc.uploadedAt", "$createdAt"] },
+            kind: "document_uploaded"
+          }
+        }
+      }
+    }
+  },
     { $unwind: "$events" },
     ...(Object.keys(range).length ? [{ $match: { "events.at": range } }] : []),
     { $sort: { "events.at": -1, "events.kind": -1, "events.eventId": -1, _id: -1 } },
@@ -119,6 +130,38 @@ async function deliver(customer, doc, staff, user) {
   }
   return result;
 }
+exports.remove = async (req,res)=>{
+
+  const customer = await Customer.findById(req.params.id);
+
+  if(!customer){
+    return res.status(404).json({
+      message:"Customer not found."
+    });
+  }
+
+
+  // delete cloudinary files
+  for(const doc of customer.documents || []){
+    if(doc.publicId){
+      await cloudinary.uploader.destroy(
+        doc.publicId,
+        {
+          resource_type: doc.resourceType || "image"
+        }
+      ).catch(()=>{});
+    }
+  }
+
+
+  await Customer.findByIdAndDelete(req.params.id);
+
+
+  res.json({
+    message:"Customer deleted successfully."
+  });
+
+};
 exports.stats = async (_req, res) => {
   const start = new Date(); start.setDate(1); start.setHours(0, 0, 0, 0);
   const [totalCustomers, activeUsers, thisMonth, docs] = await Promise.all([

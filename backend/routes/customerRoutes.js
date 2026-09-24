@@ -12,4 +12,5 @@ router.get("/:id", wrap(c.get));
 router.post("/:id/documents", upload.single("image"), wrap(c.upload));
 router.put("/:id/documents/:docId", upload.single("image"), wrap(c.upload));
 router.post("/:id/documents/:docId/send", wrap(c.send));
+router.delete("/:id", adminOnly, wrap(c.remove));
 module.exports = router;

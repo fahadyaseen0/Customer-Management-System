@@ -7,17 +7,75 @@ import "./Revision.css";
 const when=d=>d?new Date(d).toLocaleString("en-PK"):"—";
 const body=(method,data)=>({method,body:JSON.stringify(data)});
 function Table({rows,open}){return <div className="table-scroll"><table><thead><tr><th>Date / Time</th><th>Customer Name</th><th>Customer City</th></tr></thead><tbody>{rows.map(c=><tr key={c.eventId||c._id} onClick={()=>open(c._id)}><td>{when(c.activityAt||c.lastActivityAt||c.createdAt)}</td><td><button className="text-button" onClick={e=>{e.stopPropagation();open(c._id)}}>{c.name}</button></td><td>{c.city}</td></tr>)}</tbody></table>{!rows.length&&<p className="empty-state">No records to display.</p>}</div>}
-function Record({c,close,changed,notify}){
+function Record({c,close,changed,notify,user,refresh,removeLocal,page,loadHistory}){
  const [busy,setBusy]=useState(false),[file,setFile]=useState(null),[preview,setPreview]=useState(""),[enlarged,setEnlarged]=useState(null),[retry,setRetry]=useState("");
  const input=useRef(null);
  useEffect(()=>()=>{if(preview)URL.revokeObjectURL(preview)},[preview]);
- async function upload(e){e.preventDefault();setBusy(true);try{const form=new FormData();form.append("image",file);const data=await api("/customers/"+c._id+"/documents",{method:"POST",body:form});changed(data.customer,true);const doc=data.customer.documents.at(-1)._id;setRetry(data.notification.status==="sent"?"":doc);setEnlarged(null);setFile(null);setPreview("");input.current.value="";notify(data.notification.warning||(data.notification.status==="sent"?"Document saved. WhatsApp API accepted the message for assigned Staff.":"Document saved, but WhatsApp was not sent: "+data.notification.error));}catch(err){notify(err.message)}finally{setBusy(false)}}
- async function resend(docId=retry){setBusy(true);try{const data=await api("/customers/"+c._id+"/documents/"+docId+"/send",{method:"POST"});changed(data.customer,false);if(data.notification.status==="sent")setRetry("");notify(data.notification.warning||(data.notification.status==="sent"?"WhatsApp API accepted the message for assigned Staff.":data.notification.error));}catch(err){notify(err.message)}finally{setBusy(false)}}
+ async function upload(e){e.preventDefault();setBusy(true);try{const form=new FormData();form.append("image",file);const data=await api("/customers/"+c._id+"/documents",{method:"POST",body:form});changed(data.customer,true);
+refresh();const doc=data.customer.documents.at(-1)._id;setRetry(data.notification.status==="sent"?"":doc);setEnlarged(null);setFile(null);setPreview("");input.current.value="";notify(data.notification.warning||(data.notification.status==="sent"?"Document saved. WhatsApp API accepted the message for assigned Staff.":"Document saved, but WhatsApp was not sent: "+data.notification.error));}catch(err){notify(err.message)}finally{setBusy(false)}}
+ async function resend(docId=retry){setBusy(true);try{const data=await api("/customers/"+c._id+"/documents/"+docId+"/send",{method:"POST"});changed(data.customer,false);
+refresh();if(data.notification.status==="sent")setRetry("");notify(data.notification.warning||(data.notification.status==="sent"?"WhatsApp API accepted the message for assigned Staff.":data.notification.error));}catch(err){notify(err.message)}finally{setBusy(false)}}
  return <Modal title={c.name} subtitle={c.city} onClose={()=>!busy&&close()}><p>Assigned Staff: <b>{c.staffName||"Staff not recorded"}</b></p>
  <form className="form-stack" onSubmit={upload}><h3>Upload new document</h3>
  <div className="upload-preview"><input ref={input} name="image" aria-label="Document file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" required disabled={busy} onChange={e=>{const picked=e.target.files[0]||null;setFile(picked);setPreview(picked?URL.createObjectURL(picked):"")}}/>{file&&preview&&(file.type.startsWith("image/")?<button type="button" className="preview-button" onClick={()=>setEnlarged({url:preview,pdf:false})} aria-label="Enlarge selected image"><img src={preview} alt="Selected document preview"/></button>:<button type="button" className="secondary" onClick={()=>setEnlarged({url:preview,pdf:true})}>Preview selected PDF</button>)}</div>
  <small>Maximum 8 MB. Documents go to the WhatsApp number registered for the assigned Staff.</small><div className="actions"><button className="primary" disabled={busy||!c.staff||!file}>{busy?"Please wait…":"Send Document"}</button>{file&&<button type="button" className="secondary" disabled={busy} onClick={()=>input.current.click()}>Replace</button>}{retry&&<button type="button" className="secondary" disabled={busy} onClick={()=>resend()}>Retry WhatsApp</button>}</div></form>
- <h3>Saved documents</h3><div className="table-scroll"><table><thead><tr><th>Staff</th><th>Uploaded</th><th>Image</th><th>Saved By</th></tr></thead><tbody>{[...c.documents].reverse().sort((a,b)=>new Date(b.uploadedAt)-new Date(a.uploadedAt)).map(d=><tr key={d._id}><td>{d.staffName}</td><td>{when(d.uploadedAt)}{d.lastSend?.status!=="sent"&&<button type="button" className="secondary small" disabled={busy} onClick={()=>resend(d._id)}>Retry WhatsApp</button>}{d.lastSend?.status&&<small className="delivery-status">{d.lastSend.status==="sent"?"WhatsApp API accepted":d.lastSend.status}</small>}</td><td><button type="button" className="icon-button" onClick={()=>setEnlarged({url:d.url,pdf:d.resourceType==="raw"})} aria-label="View image"><Eye/></button></td><td>{d.savedBy?.name||"—"}</td></tr>)}</tbody></table></div>{!c.documents.length&&<p>No documents yet.</p>}<p className="saved-by">Customer Saved By: <b>{c.savedBy.name}</b></p>
+ <h3>Saved documents</h3><div className="table-scroll"><table><thead><tr><th>Staff</th><th>Uploaded</th><th>Image</th><th>Saved By</th></tr></thead><tbody>{[...c.documents].reverse().sort((a,b)=>new Date(b.uploadedAt)-new Date(a.uploadedAt)).map(d=><tr key={d._id}><td>{d.staffName}</td><td>{when(d.uploadedAt)}{d.lastSend?.status!=="sent"&&<button type="button" className="secondary small" disabled={busy} onClick={()=>resend(d._id)}>Retry WhatsApp</button>}{d.lastSend?.status&&<small className="delivery-status">{d.lastSend.status==="sent"?"WhatsApp API accepted":d.lastSend.status}</small>}</td><td><button type="button" className="icon-button" onClick={()=>setEnlarged({url:d.url,pdf:d.resourceType==="raw"})} aria-label="View image"><Eye/></button></td><td>{d.savedBy?.name||"—"}</td></tr>)}</tbody></table></div>{!c.documents.length&&<p>No documents yet.</p>}<div className="saved-by-row">
+
+<p className="saved-by">
+ Customer Saved By: <b>{c.savedBy?.name || "—"}</b>
+</p>
+
+
+{user?.role==="admin" && (
+
+<button
+ className="delete-icon-btn"
+ title="Delete Customer"
+
+ onClick={async()=>{
+
+ const ok = window.confirm(
+ "Are you sure? Customer and all saved documents will be permanently deleted."
+ );
+
+ if(!ok) return;
+
+
+ try{
+
+ await api("/customers/"+c._id,{
+   method:"DELETE"
+ });
+
+
+ notify("Customer deleted successfully.");
+
+removeLocal(c._id);
+
+close();
+
+if(page==="history"){
+  await loadHistory();
+}
+
+refresh();
+
+
+ }catch(e){
+
+ notify(e.message);
+
+ }
+
+ }}
+
+>
+ 🗑
+</button>
+
+)}
+
+</div>
  {enlarged&&<div className="image-lightbox" role="dialog" aria-label="Document preview" aria-modal="true" onClick={e=>{if(e.target===e.currentTarget)setEnlarged(null)}} onKeyDown={e=>{if(e.key==="Escape")setEnlarged(null)}}><button type="button" className="secondary" autoFocus onClick={()=>setEnlarged(null)}>Close preview</button>{enlarged.pdf?<iframe src={enlarged.url} title="Document PDF preview"/>:<img src={enlarged.url} alt="Document enlarged"/>}</div>}</Modal>
 }
 function Admin({user,notify,refresh}){
@@ -60,7 +118,48 @@ export default function App(){
  const loadHistory=useCallback(()=>{const p=new URLSearchParams({page:num,limit:30});if(from)p.set("from",new Date(from+"T00:00:00").toISOString());if(to)p.set("to",new Date(to+"T23:59:59.999").toISOString());setLoading(true);return api("/customers/history?"+p).then(setHistory).catch(e=>notify(e.message)).finally(()=>setLoading(false));},[num,from,to,notify]);
  useEffect(()=>{if(page==="history"){const id=setTimeout(loadHistory,0);return()=>clearTimeout(id)}},[page,loadHistory]);
  async function open(id){try{const d=await api("/customers/"+id);setSelected(d.customer);setSearchOpen(false);setSearch("");setMatches([])}catch(e){notify(e.message)}}
- function changed(c,isNew){setSelected(c);if(isNew){const entry={_id:c._id,name:c.name,city:c.city,activityAt:c.lastActivityAt||c.createdAt,eventId:"recent-"+(++recentSequence.current)};setRecent(prev=>[entry,...prev]);refresh()}if(page==="history")loadHistory()}
+ function changed(c,isNew){
+
+ setSelected(c);
+
+
+ if(isNew){
+
+   const latestDoc = c.documents?.[c.documents.length - 1];
+
+
+   if(latestDoc){
+
+     const entry={
+       _id:c._id,
+       name:c.name,
+       city:c.city,
+       activityAt:latestDoc.uploadedAt,
+       eventId:"recent-"+(++recentSequence.current)
+     };
+
+
+     setRecent(prev=>[entry,...prev]);
+
+   }
+
+ }
+
+
+ if(page==="history"){
+   loadHistory();
+ }
+
+ refresh();
+
+}
+function removeLocal(id){
+
+ setRecent(prev =>
+   prev.filter(item => item._id !== id)
+ );
+
+}
  async function createCustomer(e){e.preventDefault();setBusy(true);try{await api("/customers",body("POST",Object.fromEntries(new FormData(e.target))));setAdd(false);setSearchOpen(false);refresh();if(page==="history")loadHistory();notify("Customer added successfully.");}catch(err){notify(err.message)}finally{setBusy(false)}}
  const banner=notice&&<div className="notice" role="status"><span>{notice}</span><button onClick={()=>setNotice("")}>Close</button></div>;
  if(!session)return <>{banner}<Login onLogin={login}/></>;
@@ -72,5 +171,16 @@ export default function App(){
  {page==="history"&&<section className="records-section"><div className="filter-panel"><label>From date<input type="date" value={from} onChange={e=>{setFrom(e.target.value);setNum(1)}}/></label><label>To date<input type="date" value={to} onChange={e=>{setTo(e.target.value);setNum(1)}}/></label><button className="secondary" onClick={()=>{setFrom("");setTo("");setNum(1)}}>Clear</button></div>{loading?<p>Loading…</p>:<Table rows={history.customers} open={open}/>}<div className="actions"><button disabled={num<=1||loading} onClick={()=>setNum(n=>n-1)}>Previous</button><span>{history.total} records · Page {num} of {history.pages||1}</span><button disabled={num>=history.pages||loading} onClick={()=>setNum(n=>n+1)}>Next</button></div></section>}
  {page==="admin"&&user.role==="admin"&&<Admin user={user} notify={notify} refresh={refresh}/>}</main>
  {add&&<Modal title="Add Customer" onClose={()=>setAdd(false)}><form className="form-stack" onSubmit={createCustomer}><label>Customer Name<input name="name" required maxLength={120}/></label><label>Customer City<input name="city" required maxLength={100}/></label><label>Staff<select name="staffId" required defaultValue=""><option value="">Select registered Staff</option>{staff.map(s=><option key={s._id} value={s._id}>{s.name} · +{s.phone}</option>)}</select></label>{!staff.length&&<p>Ask Admin to register Staff first.</p>}<p>Saved By: <b>{user.name}</b></p><button className="primary" disabled={busy}>Save Customer</button></form></Modal>}
- {selected&&<Record key={selected._id} c={selected} close={()=>setSelected(null)} changed={changed} notify={notify}/>}</>;
+ {selected&&<Record 
+key={selected._id}
+c={selected}
+close={()=>setSelected(null)}
+changed={changed}
+notify={notify}
+user={user}
+refresh={refresh}
+removeLocal={removeLocal}
+page={page}
+loadHistory={loadHistory}
+/>}</>;
 }
